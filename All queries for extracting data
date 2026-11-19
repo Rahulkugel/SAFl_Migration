@@ -1,0 +1,382 @@
+
+--  COMPLETE CLIENT DETAILS 
+
+select * from total_active_customer tac ;
+
+
+create table g_client as 
+select
+distinct 
+	l.loan_no as row_id,
+	l.id as loanid,
+	c.id as customerid,
+	case
+		when c.prefix in ('Mr.', 'Mr') then 288
+		when c.prefix in ('M/S', 'M/s.', 'Ms.Ms.') then 290
+		when c.prefix in ('Mrs.') then 290
+		when c.gender = '1' then 288 
+		when c.gender = '2' then 290
+		else null
+	end as "salutation",
+	case
+		when c.gender = '1' then 286
+		when c.gender = '2' then 285
+		when c.prefix in ('Mr.', 'Mr') then 286
+		when c.prefix in ('M/S', 'M/s.', 'Ms.Ms.') then 285
+		when c.prefix in ('Mrs.') then 285
+	end as "genderId",
+	trim(split_part(trim(c.name), ' ', 1)) as "firstName",
+	case
+		when array_length(string_to_array(trim(c.name), ' '), 1) > 2 then 
+trim(array_to_string( (string_to_array(trim(c.name), ' '))[2:array_length(string_to_array(trim(c.name), ' '), 1)-1], ' ' ))
+		else ''
+	end as "middleName",
+	case
+		when array_length(string_to_array(trim(c.name), ' '), 1) > 1 then 
+trim(replace(replace((string_to_array(trim(c.name), ' '))[array_length(string_to_array(trim(c.name), ' '), 1)],')',''),'(',''))
+		else '.'
+	end as "lastName",
+	coalesce(TO_CHAR(c.dob, 'YYYY-MM-DD 00:00:00'),'1999-12-31 00:00:00') as "dateOfBirth",
+	case 
+		when c.age=0 
+		then EXTRACT(YEAR FROM AGE(l.loan_date, c.dob)) 
+		else coalesce(c.age ,40)
+	end as "age",
+	case 
+    when length(trim(c.mobile1)) <6 and length(trim(c.mobile2)) <6
+    then  '9999999999' 
+    when length(trim(c.mobile1)) <6 and c.mobile2 is null 
+    then  '9999999999' 
+    when length(trim(c.mobile2)) <6 and c.mobile1 is null 
+    then  '9999999999' 
+	when c.mobile1 like '%00000%'  and trim(c.mobile2) like ''
+	then   '9999999999' 
+	when c.mobile1 in ( 'SQGPS8753C','BT','AZFPP4154N','AK') 
+	then  c.mobile2 
+	when c.mobile1 = '0         ' 
+	then c.mobile2 
+	else coalesce(c.mobile1 , c.mobile2 )
+	end as "mobileNo",
+	case
+		when c.relation in ('S/o', 'D/o', 'W/o') then c.rel_name
+		else ''
+	end as "fatherName",
+	null as "motherName",
+	null as "isEarner",
+	CASE
+        WHEN LENGTH(REGEXP_REPLACE(TRIM(c.address ), '\s+', ' ', 'g')) <= 100 THEN REGEXP_REPLACE(TRIM(c.address ), '\s+', ' ', 'g')
+        ELSE LEFT(REGEXP_REPLACE(TRIM(c.address ), '\s+', ' ', 'g'),
+             100 - POSITION(' ' IN REVERSE(LEFT(REGEXP_REPLACE(TRIM(c.address ), '\s+', ' ', 'g'),100))) + 1)
+    END AS "address_line1",
+ CASE
+        WHEN LENGTH(REGEXP_REPLACE(TRIM(c.address ), '\s+', ' ', 'g')) <= 100 THEN NULL
+        ELSE LTRIM(
+            SUBSTRING(
+                REGEXP_REPLACE(TRIM(c.address ), '\s+', ' ', 'g') FROM
+                100 - POSITION(' ' IN REVERSE(LEFT(REGEXP_REPLACE(TRIM(c.address ), '\s+', ' ', 'g'),100))) + 2
+            )
+        )
+    END AS "address_line2",
+	s."name" as "state",
+	ac.city as "city",
+	d."name" as "district",
+	c2."name" as "country",
+	coalesce(ac.pincode,313002) as "postalCode",
+	-- LENGTH(CAST(ac.pincode AS TEXT)) as  lengthpincode,
+	ac.landmark as "landmark",
+	1 as "officeId",
+	1 as "legalFormId",
+	1 as "active",
+	TO_CHAR(l.loan_date, 'YYYY-MM-DD 00:00:00')as "submittedOnDate",
+    TO_CHAR(l.loan_date, 'YYYY-MM-DD 00:00:00')as"activationDate"
+from
+	total_active_customer tac
+inner join loan l on l.id = tac.loanid
+left join customer c on
+	c.id = l.customer_id
+left join address_cust ac on
+	ac.customer_id = c.id
+	and ac.address = c.address
+	and ac.present = true
+left join country c2 on
+	c2.id = ac.country_id
+left join state s on
+	s.id = ac.state_id
+left join district d on
+	d.id = ac.district_id
+order by 2 asc , 3 asc 
+
+
+
+
+
+--  LOAN 
+
+drop  table g_loans;
+
+create table g_loans as 
+select 
+l.loan_no as row_id,
+l.customer_id as customerid,
+l.name as customername,
+l.id as loanid,
+8 as "productId",
+l.product_id ,
+l.product_code ,
+p."name" as productname,
+l.loan_amount as principal,
+l.deductions as deductions,
+l.net_payable as netdisbursement,
+l.disbursal_term ,
+l.disbursal_count as disbursalcount,
+l.disbursal_plan_count as disbursalplan,
+l.frequency as frequency,
+l.tenure_months as tenurinmonthsdb,
+l.instalments as "loanTermFrequency",
+abs(l.tenure_months -l.instalments) as diff_tenure_inst,
+2 as "loanTermFrequencyType",
+l.instalments as "numberOfRepayments",
+l.repayment_schedule_count as rpscount,
+l.adv_instalments as "advanceinstallment",
+-- l.frequency  as frequencyoflaon,
+1 as "repaymentEvery",
+2 as "repaymentFrequencyType",
+l.irr as "interestRatePerPeriod",
+1 as "amortizationType",
+0 as "interestType",
+1 as "interestCalculationPeriodType",
+6 as "transactionProcessingStrategyId",
+1 as "fundId",
+394 as "loanPurposeId",
+19 as "loanCategoryId",
+1 as "loanOfficcerId",
+concat(l.loan_date,' 00:00:00') as "disbursementDate",
+concat(l.loan_date,' 00:00:00') as "submittedOnDate",
+concat(l.loan_date,' 00:00:00') as "interestChargedFromDate",
+concat(l.first_emi,' 00:00:00') as "repaymentsStartingFromDate",
+11 as "repaymentModeEnum",
+1 as "officeId",
+l.loan_status as loanstatus,
+l.emi 
+from loan l 
+left join product p on p.id =l.product_id 
+inner  join total_active_customer tac on tac.loanid= l.id 
+order by 4 asc;
+
+
+
+
+
+
+
+
+
+
+
+--  RPS 
+
+drop  table g_repayment_schedule;
+
+create table g_repayment_schedule as 
+select
+    p.loan_id as loanid,
+	l.loan_no as rowid,
+	l.loan_no as pid,
+	row_number()over(partition  by p.loan_id  order by p.loan_id asc ,  p."date" asc ) "ino", 
+	l.loan_no  as "case_no",
+	concat(p."date",' 00:00:00') as date ,
+	p.instalment,
+	case 
+		when p.instalment=0 
+		then 0 
+		when p.instalment  >0 
+		then  p.instalment -p.charges
+		else 0
+	end as inst,
+	p.charges  as "hpcharge"
+from
+	inst_plan_loan p
+inner  join loan l on p.loan_id = l.id
+inner join total_active_customer tac on tac.loanid =l.id 
+order by 1 asc , p."date" asc ,4 asc ;
+
+
+
+--  Repayments 
+
+drop  table g_repayments;
+
+create table g_repayments as 
+select
+l.id as loanid, 
+    l.loan_no  as row_id,
+	vl.amount  as "transactionAmount",
+	concat(vl.date,' 00:00:00') as "transactionDate",
+	vch.narration ,
+	vch.vch_book_code ,
+	vl.account_code,
+	-- vl."date" as "transactionDate",
+    2 as "paymentTypeId",
+	3 as "channelTypeId",
+	'FALSE' as "isUseHoldAmount",
+	0 as "npaAmount"
+from
+total_active_customer tac
+inner join loan l on tac.loanid =l.id 
+left join vch_loan vl on vl.loan_id=l.id
+left join vch on vch.id=vl.vch_id
+where vl.account_code='INSTALMENT' 
+and vl.amount  >0 
+and vl.date <='2026-07-31'
+-- and tac.id >60000 and tac.id<=80000
+order by
+	2 asc ,
+	5 asc;
+
+
+select
+gs.loanid ,
+gl.principal,
+sum(inst) as principal,
+abs(gl.principal-sum(inst)) as diff
+from g_repayment_schedule  gs 
+left join g_loans gl  on gl.loanid=gs.loanid
+group by gs.loanid,gl.principal ;
+
+
+
+--  CHARGES 
+
+
+create table g_charges as 
+SELECT
+        l.id AS loanid,
+        l.loan_no AS row_id,
+        ac."name" AS "chargeName",
+        '' AS "charge transactionid",
+        CONCAT(v.date, ' 00:00:00') AS "charge date",
+        CASE
+            WHEN v.amount < 0 THEN ABS(v.amount)
+            ELSE 0
+        END AS chargeamount,
+        'due' AS "chargepaymentstatus",
+        'post disbursement' AS "chargetye",
+        '' AS "charge id"
+    FROM vch_n v
+    LEFT JOIN loan l
+        ON v.loan_id = l.id
+    LEFT JOIN account_code ac
+        ON ac.code = v.account_code
+    INNER JOIN total_active_customer tac
+        ON tac.loanid = l.id
+        where v.amount<0;
+
+
+
+
+
+
+
+
+
+
+--  g_approvalstage 
+
+drop  table g_approvalstage;
+
+create table g_approvalstage as 
+select 
+l.loan_no as row_id,
+l.customer_id as customerid,
+l.name as customername,
+l.id as loanid,
+l.loan_amount as approvedLoanAmount,
+concat(l.loan_date,' 00:00:00') as approvedOnDate,
+concat(l.loan_date,' 00:00:00') as expectedDisbursementDate,
+l.emi 
+from loan l 
+left join product p on p.id =l.product_id 
+inner  join total_active_customer tac on tac.loanid= l.id 
+order by 4 asc;
+
+
+
+
+
+--  g_disbursement 
+
+drop  table g_disbursement;
+
+
+
+create table  g_disbursement as 
+select 
+l.loan_no as row_id,
+l.customer_id as customerid,
+l.name as customername,
+l.id as loanid,
+l.loan_amount as transactionAmount,
+concat(l.loan_date,' 00:00:00') as actualDisbursementDate,
+0 as isUpfront,
+l.emi 
+from loan l 
+left join product p on p.id =l.product_id 
+inner  join total_active_customer tac on tac.loanid= l.id 
+order by 4 asc;
+
+
+
+--  g_loginstage 
+
+drop  table g_loginstage;
+
+
+
+create table  g_loginstage as 
+select 
+l.loan_no as row_id,
+l.customer_id as customerid,
+l.name as customername,
+l.id as loanid,
+0 as loginCharge,
+l.loan_amount as loginAmount,
+l.irr as rateOfInterest,
+l.instalments as tenure,
+'jpr' as location,
+concat(l.loan_date,' 00:00:00') as createdDateAndTime,
+0 as isUpfront,
+l.emi 
+from loan l 
+left join product p on p.id =l.product_id 
+inner  join total_active_customer tac on tac.loanid= l.id 
+order by 4 asc;
+
+
+
+--  g_sanctionstage 
+
+drop  table g_sanctionstage;
+
+
+
+create table  g_sanctionstage as 
+select 
+l.loan_no as row_id,
+l.customer_id as customerid,
+l.name as customername,
+l.id as loanid,
+l.loan_amount as sanctionedAmount,
+l.irr as rateOfInterest,
+l.instalments as tenure,
+concat(l.loan_date,' 00:00:00') as sanctionedDateAndTime
+from loan l 
+left join product p on p.id =l.product_id 
+inner  join total_active_customer tac on tac.loanid= l.id 
+order by 4 asc;
+
+
+  select tac.loanid  as loan_id, trim(tac.loan_no ) as loan_no
+  from total_active_customer tac 
+
+
+
